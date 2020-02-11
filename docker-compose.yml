@@ -1,0 +1,67 @@
+version: "3.7"
+services:
+  mysql:
+    build: mysql
+    restart: unless-stopped
+    hostname: "${ENV_TYPE}-mysql"
+    environment:
+       - TZ=Europe/Warsaw
+       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+       - MYSQL_DATABASE=${MYSQL_DATABASE}
+       - MYSQL_USER=${MYSQL_USER}
+       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    volumes:
+      - ./mysql/init-db/:/docker-entrypoint-initdb.d
+      - ./logs/mysql/:/var/log/mysql
+      - ./storage/mysql/:/var/lib/mysql
+    networks:
+      powerdns:
+        ipv4_address: ${MYSQL_IP}
+
+  master:
+    build: master
+    restart: unless-stopped
+    ports:
+      - "5053:53"
+      - "5053:53/udp"
+      - "8081:8081"
+    hostname: "${ENV_TYPE}-master"
+    environment:
+      - TZ=Europe/Warsaw
+      - MYSQL_HOST=${MYSQL_IP}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    volumes:
+      - ./master/confs/:/etc/powerdns/pdns.d
+    networks:
+      powerdns:
+        ipv4_address: ${POWERDNS_MASTER_IP}
+
+  admin:
+    image: ngoduykhanh/powerdns-admin:latest
+    restart: unless-stopped
+    ports:
+      - "9191:80"
+    hostname: "${ENV_TYPE}-admin"
+    logging:
+      driver: json-file
+      options:
+        max-size: 50m
+    environment:
+      - TZ=Europe/Warsaw
+      - SQLALCHEMY_DATABASE_URI=mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@${MYSQL_IP}/${MYSQL_DATABASE}
+      - GUINCORN_TIMEOUT=60
+      - GUNICORN_WORKERS=2
+      - GUNICORN_LOGLEVEL=DEBUG
+    networks:
+      powerdns:
+        ipv4_address: ${POWERDNS_ADMIN_IP}
+
+networks:
+  powerdns:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: ${NETWORK}
